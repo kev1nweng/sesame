@@ -16,8 +16,9 @@ So the hook has to be in place before you sign in. Inject afterwards and you onl
 the keys for the databases you happen to open (11 of 22 in our measurements, versus 22
 of 22 when injecting first).
 
-That is why `--restart` is recommended: it closes and reopens WeChat and leaves it on
-the login screen, waiting for you.
+That is why `all` closes and reopens WeChat and leaves it on the login screen, waiting
+for you. `--attach` skips the restart and hooks whatever is already running; use it only
+if you know which databases you need.
 
 ---
 
@@ -69,7 +70,7 @@ Three common problems:
 ## Step 3: run the whole pipeline
 
 ```bash
-./target/release/sesame all --restart --seconds 180 --out export
+./target/release/sesame all --seconds 180 --out export
 ```
 
 What happens next:
@@ -77,9 +78,9 @@ What happens next:
 1. **WeChat quits** (graceful first, force after a timeout)
 2. **WeChat relaunches** and stops at the login screen
 3. **The hook is injected** — you should see `hooks installed: CCCrypt, CCCryptorCreate, ...`
-4. It prints: `now sign in on WeChat`
+4. It prints: `hooks are in place. Sign in to WeChat now`
 5. **You sign in** — the tool notices the first key and starts its timer
-6. It captures for 180 seconds (opening a few chats meanwhile is optional)
+6. It captures for 180 seconds
 7. It matches keys, decrypts, and exports chats, Moments and Favorites
 
 Interrupting is safe: the hook stays loaded and the log keeps growing, so you can run
@@ -139,7 +140,7 @@ and can be rerun as often as you like.
 
 Most likely causes, in order:
 
-1. **You injected after signing in** — use `--restart` so the hook is in place first
+1. **You injected after signing in** — rerun without `--attach`, so the hook is in place first
 2. **WeChat is in the background**, or nothing happened after login — open a few chats
    and wait a little
 3. **The hook never installed** — check the `hook` output for `hooks installed`.
@@ -178,7 +179,7 @@ case worth investigating.
 ## Another machine, another account
 
 `sesame` is a single binary. Copy `sesame` and `libsesame_hook.dylib` together and the
-workflow is identical: `doctor`, then `all --restart`.
+workflow is identical: `doctor`, then `all`.
 
 The database directory is discovered from the signed-in account
 (`xwechat_files/wxid_*/db_storage`), so switching accounts needs no flags. If several

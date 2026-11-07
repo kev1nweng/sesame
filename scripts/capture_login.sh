@@ -5,4 +5,4 @@
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SECS="${1:-180}"
 OUT="${2:-$ROOT/export}"
-exec "$ROOT/target/release/sesame" all --restart --seconds "$SECS" --out "$OUT"
+exec "$ROOT/target/release/sesame" all --seconds "$SECS" --out "$OUT"

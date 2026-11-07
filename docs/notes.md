@@ -76,7 +76,7 @@ Measured:
 | Inject before login, sign in normally | **22 / 22** |
 
 WeChat decrypts every database once at login. That is the only moment where all keys
-exist. Hence `sesame all --restart`.
+exist. Hence `sesame all` restarts WeChat by default.
 
 ## Measured scale
 

@@ -16,7 +16,13 @@ struct Printer;
 
 impl ScriptHandler for Printer {
     fn on_message(&mut self, message: &Message, _data: Option<Vec<u8>>) {
-        println!("  script: {message:?}");
+        // The script sends 'ok' on success. Frida wraps it in a struct this crate cannot
+        // deserialize, so the only useful thing here is the error text; stay quiet
+        // otherwise instead of dumping raw debug output at the user.
+        let text = format!("{message:?}");
+        if text.contains("err:") {
+            println!("  loader: {text}");
+        }
     }
 }
 

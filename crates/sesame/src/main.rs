@@ -98,6 +98,12 @@ enum Cmd {
         /// Loader: frida (default, recommended) / builtin (debug only; crashes WeChat)
         #[arg(long, default_value = "frida")]
         loader: String,
+        /// Inject into the running WeChat instead of restarting it.
+        /// Without this flag the command quits WeChat, relaunches it, injects at the
+        /// login screen and waits for you to sign in, which is the only way to capture
+        /// every database key.
+        #[arg(long)]
+        attach: bool,
     },
     /// Inject only, no capture (debugging)
     Inject {
@@ -160,9 +166,11 @@ enum Cmd {
         dec_root: PathBuf,
         #[arg(long, default_value = "export")]
         out: PathBuf,
-        /// Restart WeChat and inject at the login screen (captures every database key)
+        /// Inject into the running WeChat instead of restarting it.
+        /// The default is: quit WeChat, relaunch, inject at the login screen, wait for
+        /// you to sign in.
         #[arg(long)]
-        restart: bool,
+        attach: bool,
     },
 }
 
@@ -228,7 +236,8 @@ fn run() -> Result<()> {
             seconds,
             dylib,
             loader,
-        } => hook_cmd(pid, db_dir, out, seconds, dylib, loader, false),
+            attach,
+        } => hook_cmd(pid, db_dir, out, seconds, dylib, loader, attach),
         Cmd::Decrypt { keys, db_dir, out } => decrypt_cmd(keys, db_dir, out),
         Cmd::Export {
             dec_root,
@@ -242,8 +251,8 @@ fn run() -> Result<()> {
             keys,
             dec_root,
             out,
-            restart,
-        } => all_cmd(seconds, db_dir, keys, dec_root, out, restart),
+            attach,
+        } => all_cmd(seconds, db_dir, keys, dec_root, out, attach),
         Cmd::Fav { dec_root, out } => fav::run(&dec_root, &out),
     }
 }
@@ -557,7 +566,7 @@ fn wait_for_status(log: &Path, timeout: std::time::Duration) -> Result<()> {
 }
 
 /// Restart WeChat: quit cleanly, relaunch, stop at the login screen.
-fn restart_wechat() -> Result<()> {
+fn restart_wechat() -> Result<i32> {
     if wechat::detect().pid.is_some() {
         println!("restarting WeChat (you will need to sign in again)");
         let _ = std::process::Command::new("/usr/bin/osascript")
@@ -582,10 +591,11 @@ fn restart_wechat() -> Result<()> {
     while start.elapsed() < std::time::Duration::from_secs(60) && wechat::detect().pid.is_none() {
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    anyhow::ensure!(wechat::detect().pid.is_some(), "WeChat did not start");
+    let pid = wechat::detect().pid;
+    anyhow::ensure!(pid.is_some(), "WeChat did not start");
     println!("  waiting for the login screen (15s)");
     std::thread::sleep(std::time::Duration::from_secs(15));
-    Ok(())
+    Ok(pid.unwrap())
 }
 
 fn all_cmd(
@@ -594,13 +604,10 @@ fn all_cmd(
     keys: PathBuf,
     dec_root: PathBuf,
     out: PathBuf,
-    restart: bool,
+    attach: bool,
 ) -> Result<()> {
-    if restart {
-        restart_wechat()?;
-    }
     println!("\n== 1/4 capture keys ==");
-    hook_cmd(None, db_dir.clone(), keys.clone(), seconds, None, "frida".into(), restart)?;
+    hook_cmd(None, db_dir.clone(), keys.clone(), seconds, None, "frida".into(), attach)?;
 
     println!("\n== 2/4 decrypt ==");
     decrypt_cmd(keys, db_dir, dec_root.clone())?;
@@ -626,13 +633,24 @@ fn hook_cmd(
     seconds: u64,
     dylib: Option<PathBuf>,
     loader: String,
-    wait_login: bool,
+    attach: bool,
 ) -> Result<()> {
+    // Default path: quit WeChat, relaunch it, inject while the login screen is still up.
+    // WeChat unlocks every database exactly once, at login, so that is the only moment
+    // where all keys exist.
+    let pid = if attach {
+        let info = wechat::detect();
+        pid.or(info.pid).ok_or_else(|| {
+            anyhow::anyhow!("WeChat is not running; drop --attach to let sesame start it")
+        })?
+    } else {
+        if pid.is_some() {
+            println!("note: --pid is ignored unless --attach is given");
+        }
+        restart_wechat()?
+    };
     let db_root = resolve_db_dir(db_dir)?;
     let info = wechat::detect();
-    let pid = pid
-        .or(info.pid)
-        .ok_or_else(|| anyhow::anyhow!("WeChat is not running; open it and sign in first"))?;
 
     // Data dir = four levels up from db_storage (db_storage/<wxid>/xwechat_files/Documents/Data)
     let data_dir = db_root
@@ -689,7 +707,7 @@ fn hook_cmd(
         // wait for the status line (dlopen can take seconds inside a large app)
         wait_for_status(&log, std::time::Duration::from_secs(30))?;
     }
-    if wait_login {
+    if !attach {
         println!("hooks are in place. Sign in to WeChat now (login unlocks every database once).");
         let started = Instant::now();
         let mut logged = false;
@@ -705,7 +723,10 @@ fn hook_cmd(
         anyhow::ensure!(logged, "no login within 15 minutes; capture cancelled (hooks remain, run `sesame import` later)");
         println!("login detected, capturing for {seconds}s.");
     } else {
-        println!("injected, capturing for {seconds}s. Opening a few chats and scrolling helps.");
+        println!(
+            "capturing for {seconds}s. Attach mode only sees the databases you open yourself;"
+        );
+        println!("drop --attach to restart WeChat and capture every key at login.");
     }
 
     let started = Instant::now();

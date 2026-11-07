@@ -46,10 +46,10 @@ captures all of them. Injecting afterwards only catches the databases you open b
 cargo build --release
 
 ./target/release/sesame doctor
-./target/release/sesame all --restart --seconds 180 --out export
+./target/release/sesame all --seconds 180 --out export
 ```
 
-`all --restart` quits WeChat, relaunches it, injects the hook while the login screen is
+By default `all` quits WeChat, relaunches it, injects the hook while the login screen is
 up, waits for you to sign in, captures for 180 seconds, matches keys, decrypts, and
 exports.
 

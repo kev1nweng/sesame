@@ -130,12 +130,12 @@ Writes `favorites.md` and `favorites.csv`.
 Everything: capture, match, decrypt, all three exports.
 
 ```bash
-sesame all [--restart] [--seconds 180] [--keys keys.json] [--dec-root decrypted] [--out export]
+sesame all [--attach] [--seconds 180] [--keys keys.json] [--dec-root decrypted] [--out export]
 ```
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--restart` | off | quit and relaunch WeChat, inject at the login screen. **Recommended**, see the [tutorial](tutorial.md) |
+| `--attach` | off | inject into the running WeChat instead of restarting it. Attach mode only sees the databases you open yourself |
 | `--seconds` | `180` | capture window after login |
 
 ## Exit codes
