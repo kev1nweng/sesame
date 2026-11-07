@@ -75,12 +75,14 @@ Three common problems:
 
 What happens next:
 
-1. **WeChat quits** (graceful first, force after a timeout)
+1. **WeChat is killed** with SIGKILL. It ignores polite quit requests; SQLite recovers
+   any committed pages from the WAL
 2. **WeChat relaunches** and stops at the login screen
 3. **The hook is injected** — you should see `hooks installed: CCCrypt, CCCryptorCreate, ...`
 4. It prints: `hooks are in place. Sign in to WeChat now`
 5. **You sign in** — the tool notices the first key and starts its timer
-6. It captures for 180 seconds
+6. It matches every new key against every database as it arrives and stops as soon as
+   all of them are covered, or after `--seconds`
 7. It matches keys, decrypts, and exports chats, Moments and Favorites
 
 Interrupting is safe: the hook stays loaded and the log keeps growing, so you can run

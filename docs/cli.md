@@ -136,7 +136,7 @@ sesame all [--attach] [--seconds 180] [--keys keys.json] [--dec-root decrypted] 
 | Option | Default | Meaning |
 |---|---|---|
 | `--attach` | off | inject into the running WeChat instead of restarting it. Attach mode only sees the databases you open yourself |
-| `--seconds` | `180` | capture window after login |
+| `--seconds` | `180` | upper bound on the capture window. It stops earlier once every database has a key |
 
 ## Exit codes
 

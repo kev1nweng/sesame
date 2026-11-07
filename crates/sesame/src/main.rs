@@ -567,35 +567,49 @@ fn wait_for_status(log: &Path, timeout: std::time::Duration) -> Result<()> {
 
 /// Restart WeChat: quit cleanly, relaunch, stop at the login screen.
 fn restart_wechat() -> Result<i32> {
-    if wechat::detect().pid.is_some() {
-        println!("restarting WeChat (you will need to sign in again)");
-        let _ = std::process::Command::new("/usr/bin/osascript")
-            .args(["-e", r#"quit app "WeChat""#])
+    if let Some(pid) = wechat::detect().pid {
+        // WeChat ignores a polite quit request, so go straight to SIGKILL. SQLite is
+        // crash safe and committed pages are recovered from the WAL, so this loses
+        // nothing that was already written.
+        println!("restarting WeChat (SIGKILL {pid}, you will need to sign in again)");
+        let _ = std::process::Command::new("/bin/kill")
+            .args(["-9", &pid.to_string()])
             .status();
         let start = Instant::now();
-        while start.elapsed() < std::time::Duration::from_secs(25) && wechat::detect().pid.is_some() {
-            std::thread::sleep(std::time::Duration::from_secs(1));
+        while start.elapsed() < std::time::Duration::from_secs(10) && wechat::detect().pid.is_some() {
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        if let Some(pid) = wechat::detect().pid {
-            println!("  graceful quit timed out; killing {pid}");
-            let _ = std::process::Command::new("/bin/kill")
-                .args(["-9", &pid.to_string()])
-                .status();
-            std::thread::sleep(std::time::Duration::from_secs(3));
+        // LaunchServices needs a moment to notice the app is gone. Opening it too early
+        // fails with error -600 and no process is created.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+    }
+
+    // `open` can still race with LaunchServices, so retry instead of giving up.
+    let mut last_err = String::new();
+    for attempt in 1..=5 {
+        match std::process::Command::new("/usr/bin/open")
+            .args(["-a", "/Applications/WeChat.app"])
+            .output()
+        {
+            Ok(out) => {
+                if !out.status.success() {
+                    last_err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                }
+            }
+            Err(e) => last_err = e.to_string(),
         }
+        let started = Instant::now();
+        while started.elapsed() < std::time::Duration::from_secs(20) {
+            if let Some(pid) = wechat::detect().pid {
+                println!("  waiting for the login screen (15s)");
+                std::thread::sleep(std::time::Duration::from_secs(15));
+                return Ok(pid);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        println!("  launch attempt {attempt}/5 produced no process, retrying");
     }
-    std::process::Command::new("/usr/bin/open")
-        .args(["-a", "/Applications/WeChat.app"])
-        .status()?;
-    let start = Instant::now();
-    while start.elapsed() < std::time::Duration::from_secs(60) && wechat::detect().pid.is_none() {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    let pid = wechat::detect().pid;
-    anyhow::ensure!(pid.is_some(), "WeChat did not start");
-    println!("  waiting for the login screen (15s)");
-    std::thread::sleep(std::time::Duration::from_secs(15));
-    Ok(pid.unwrap())
+    anyhow::bail!("WeChat did not start after 5 attempts: {last_err}");
 }
 
 fn all_cmd(
@@ -624,6 +638,40 @@ fn all_cmd(
     }
     println!("\nall done: {}", out.display());
     Ok(())
+}
+
+/// Test every key we have not yet matched against every database we are still missing.
+/// Cheap enough to run on each new key: one page read and one AES block per pair.
+fn match_incremental(
+    dbs: &[wechat::DbFile],
+    keys: &BTreeMap<String, String>,
+    matched: &mut BTreeMap<String, String>,
+) {
+    for khex in keys.keys() {
+        let Ok(key) = hex_to_key(khex) else { continue };
+        for db in dbs {
+            if matched.contains_key(&db.rel) {
+                continue;
+            }
+            let Ok(head) = sqlcipher::read_head(&db.path, 16384) else {
+                continue;
+            };
+            if sqlcipher::Layout::detect(&head, &key).is_some() {
+                matched.insert(db.rel.clone(), khex.clone());
+            }
+        }
+    }
+}
+
+/// Keep progress lines readable when a dozen databases are still open.
+fn summarise(missing: &[&str]) -> String {
+    let shown: Vec<&str> = missing.iter().take(4).cloned().collect();
+    let more = missing.len().saturating_sub(shown.len());
+    if more > 0 {
+        format!("{} (+{} more)", shown.join(", "), more)
+    } else {
+        shown.join(", ")
+    }
 }
 
 fn hook_cmd(
@@ -733,6 +781,9 @@ fn hook_cmd(
     let mut keys: BTreeMap<String, String> = BTreeMap::new();
     let mut status_seen = false;
     let mut pbkdf_count = 0usize;
+    let dbs = wechat::list_dbs(&db_root);
+    let mut matched: BTreeMap<String, String> = BTreeMap::new();
+    let mut seen_before = 0usize;
     while started.elapsed().as_secs() < seconds {
         std::thread::sleep(std::time::Duration::from_millis(500));
         let Ok(text) = std::fs::read_to_string(&log) else {
@@ -771,6 +822,30 @@ fn hook_cmd(
                 None => {}
             }
         }
+        if keys.len() != seen_before {
+            seen_before = keys.len();
+            match_incremental(&dbs, &keys, &mut matched);
+            let missing: Vec<&str> = dbs
+                .iter()
+                .filter(|d| !matched.contains_key(&d.rel))
+                .map(|d| d.rel.as_str())
+                .collect();
+            println!(
+                "  matched {}/{} after {}s{}",
+                matched.len(),
+                dbs.len(),
+                started.elapsed().as_secs(),
+                if missing.is_empty() {
+                    String::new()
+                } else {
+                    format!("; missing {}", summarise(&missing))
+                }
+            );
+            if missing.is_empty() {
+                println!("every database matched, stopping capture early");
+                break;
+            }
+        }
     }
 
     if !status_seen {
@@ -784,7 +859,6 @@ fn hook_cmd(
     }
 
     // match keys to databases
-    let dbs = wechat::list_dbs(&db_root);
     let mut file = KeyFile {
         tool: format!("sesame {} (hook)", env!("CARGO_PKG_VERSION")),
         created_at: util::now_str(),
