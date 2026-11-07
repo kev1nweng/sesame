@@ -102,6 +102,7 @@ unsafe fn record(kind: &[u8], key: *const u8, key_len: usize, iv: *const u8, op:
 
 /// Password derivation: one line per distinct salt.
 unsafe fn record_pbkdf(
+    kind: &[u8],
     password: *const c_char,
     password_len: usize,
     salt: *const u8,
@@ -116,7 +117,9 @@ unsafe fn record_pbkdf(
     }
     let mut buf = [0u8; 1024];
     let mut n = 0usize;
-    n = put_str(&mut buf, n, b"{\"kind\":\"pbkdf2\",\"password\":\"");
+    n = put_str(&mut buf, n, b"{\"kind\":\"");
+    n = put_str(&mut buf, n, kind);
+    n = put_str(&mut buf, n, b"\",\"password\":\"");
     n = put_hex(&mut buf, n, password as *const u8, password_len.min(256));
     n = put_str(&mut buf, n, b"\",\"salt\":\"");
     n = put_hex(&mut buf, n, salt, salt_len.min(64));
@@ -190,7 +193,10 @@ impl InvocationListener for KeyListener {
                     );
                 }
                 Layout::Pbkdf => {
+                    // Entry: password, salt and rounds are valid; the derived buffer is
+                    // still zeros, so that side is recorded in on_leave.
                     record_pbkdf(
+                        b"pbkdf2",
                         cc.arg(1) as *const c_char,
                         cc.arg(2) as usize,
                         cc.arg(3) as *const u8,

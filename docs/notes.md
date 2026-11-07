@@ -102,3 +102,27 @@ exist. Hence `sesame all` restarts WeChat by default.
 
 Unknown types now render as `[unknown type N]` instead of dumping raw XML into the
 conversation text.
+
+## PBKDF2 is not a master key
+
+Coverage varies between runs: sometimes every database's key shows up within a second of
+login, sometimes only a dozen do. The obvious explanation would be one master secret that
+each database key is derived from, which would let us compute the rest offline. It is not
+that.
+
+We hooked `CCKeyDerivationPBKDF` and compared its input with the keys we already knew:
+
+- 15 calls, 13 distinct password values
+- 10 of those values are byte-for-byte the key of a database we had already matched
+- rounds is 2 in every call
+- feeding all 13 values back through the matcher recovers only the 8 databases we already
+  had; the rest match nothing
+
+So the call derives a subkey *from* each database's own key. There is no shared secret to
+exploit, and a database's key exists only while that database is open.
+
+That is why coverage depends on what WeChat decides to unlock: a cold start that needs a
+full sync opens everything, a warm session restore opens only what it is about to use. If
+a database is missing afterwards, the way to get it is to make the app touch it (open an
+image for `media_*`, search for `*_fts`, open the mini-program list for `third_app_icon`),
+while the hook stays loaded. `sesame import` can merge the late keys without restarting.
