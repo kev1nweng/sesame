@@ -754,8 +754,8 @@ fn hook_cmd(
                     }
                 }
                 Some("pbkdf2") => {
+                    // These arrive hundreds of times per run; count them and report once.
                     pbkdf_count += 1;
-                    println!("  * password derivation seen (rounds={})", v.get("rounds").and_then(|x| x.as_u64()).unwrap_or(0));
                 }
                 Some(kind) => {
                     if let Some(k) = v.get("key").and_then(|x| x.as_str()) {
