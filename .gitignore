@@ -1,0 +1,11 @@
+/target
+
+# Private artifacts — never commit these
+keys*.json
+decrypted*/
+export*/
+*.db
+*.db-wal
+*.db-shm
+*.dylib
+.DS_Store

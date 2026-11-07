@@ -1,0 +1,15 @@
+[package]
+name = "sesame-hook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "In-process hook library for WeChat: intercepts CommonCrypto and logs SQLCipher keys"
+
+[lib]
+crate-type = ["cdylib"]
+name = "sesame_hook"
+
+[dependencies]
+frida-gum = { version = "0.13", features = ["invocation-listener"] }
+frida-gum-sys = { version = "0.13.7", features = ["auto-download"] }
+libc = "0.2"

@@ -1,0 +1,11 @@
+[package]
+name = "sesame-load"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Load a dynamic library into another process on macOS (frida-core attach + script dlopen)"
+
+[dependencies]
+frida = { version = "0.16", features = ["auto-download"] }
+serde_json = "1"
+anyhow = "1"

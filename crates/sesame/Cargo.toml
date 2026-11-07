@@ -1,0 +1,20 @@
+[package]
+name = "sesame"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Extract SQLCipher keys from macOS WeChat, decrypt its databases, export readable chat history"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aes = "0.8"
+cbc = "0.1"
+rayon = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+zstd = "0.13"
+plist = "1"
+anyhow = "1"
+md-5 = "0.10"
+sesame-load = { path = "../sesame-load" }
