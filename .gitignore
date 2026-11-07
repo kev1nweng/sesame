@@ -9,3 +9,6 @@ export*/
 *.db-shm
 *.dylib
 .DS_Store
+
+# Release artifacts and generated bundles
+/dist
